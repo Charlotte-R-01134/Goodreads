@@ -1,98 +1,74 @@
-import { Cluster } from "puppeteer-cluster"
+import axios from "axios"
 import fs from "fs"
-import puppeteer from "puppeteer"
+import { google } from "googleapis"
+
+const apiKey = process.env.apiKey
 
 export default async function(books) {
-  const getBookInfo = async ({page, data:book}) => {
-    // const page = await browser.newPage()
+  const getInfo = async (book) => {
     try {
-      await page.goto(book.url)
-  
-      try {
-        let titleSection = await page.$(".BookPageTitleSection")
-        let series = await titleSection.$("h3 a")
-        if (series) {
-          book.series = await series.evaluate(node => node.textContent.trim())
-          book.series_num = book.series.split(" #")[1]
-          book.series = book.series.split(" #")[0]
-        }
-      } catch (error) {}
-  
-      const authors = new Set()
-      try {
-        let names = await page.$$(".ContributorLink__name")
-        for (const author of names) {
-          authors.add(await author.evaluate(node => node.textContent.trim()))
-        }
-      } catch (error) {}
-      book.authors = Array.from(authors)
+      // const search = await axios.request({
+      //   method: "get",
+      //   url: "https://www.googleapis.com/books/v1/volumes",
+      //   params: {
+      //     q: book.title+"+"+book.author,
+      //     limit: 1
+      //   }
+      // })
 
-      // console.log(authors)
-  
-      const genres = []
-      try {
-        const genreContainer = await page.$$(".BookPageMetadataSection__genreButton")
-        if (genreContainer) {
-            for (const genre of genreContainer) {
-                const button = await genre.$("span .Button__labelItem")
-                genres.push(await button.evaluate(node => node.textContent.trim()))
-            }
-        } else {
-          console.log("no genres")
+      // let res = await axios.request({
+      //   method: "get",
+      //   url: search.data.items[0].selfLink
+      // })
+
+      const search = await book_api.volumes.list({
+        q: book.title+"+"+book.author,
+        limit: 1
+      })
+
+      let res = await axios.request({
+        method: "get",
+        url: search.data.items[0].selfLink
+      })
+
+      let info = res.data.volumeInfo
+
+      let genres = new Set()
+      if (info.categories) {
+        for (const category of info.categories) {
+          let split = category.split(" / ")
+          for (const genre of split) {
+            genres.add(genre.toLowerCase())
+          }
         }
-      } catch (error) {}
-      book.genres = genres // doesn't work when in clusters
+      }
+      book.genres = Array.from(genres)
+
+      book.authors = info.authors
     } catch (error) {
-      console.log(book.url)
       console.log(error)
-    } finally {
-      console.log(book)
-      await page.close()
+      count += 1
     }
-    return book
+
+    books[book.book_id] = book
   }
 
-  const cluster = await Cluster.launch({
-    concurrency: Cluster.CONCURRENCY_CONTEXT,
-    maxConcurrency: 1,
-    timeout: 120000, // 2 minutes
-    puppeteerOptions: {
-      headless: "new",
-      defaultViewport: null,
-      ignoreHTTPSErrors: true
-    }
+  let count = 0
+  let i = 0
+
+  const book_api = google.books({
+    version: "v1",
+    auth: apiKey
   })
 
-  for (const book_id in books) {
-    cluster.queue(books[book_id], getBookInfo)
+  for (let book_id in books) {
+    await getInfo(books[book_id])
+    i += 1
+    console.log(`${i} / ${Object.keys(books).length}`)
+    console.log(`Failed: ${count}`)
   }
 
-  cluster.on('taskerror', (err, data, willRetry) => {
-    if (willRetry) {
-      console.warn(`Encountered an error while crawling ${data}. ${err.message}\nThis job will be retried`);
-    } else {
-      console.error(`Failed to crawl ${data}: ${err.message}`);
-    }
-  })
+  fs.writeFileSync("books.json", JSON.stringify(books))
 
-  await cluster.idle()
-  await cluster.close()
-
-  // console.log(books)
-  // const browser = await puppeteer.launch({
-  //   headless: "new",
-  //   defaultViewport: null,
-
-  // })
-
-  // for (let book_id in books) {
-  //   books[book_id] = await getBookInfo(books[book_id])
-  // }
-
-  // await browser.close()
-
-  fs.writeFile('books.json', JSON.stringify(books), function (err) {
-    if (err) throw err
-    console.log('Saved!')
-  })
 }
+

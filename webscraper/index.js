@@ -15,7 +15,9 @@ let shelves = JSON.parse(fs.readFileSync("./data/shelves.json"))
 
 let books = JSON.parse(fs.readFileSync("./data/books.json"))
 
-await getInfo(books) // goodread blocks after so many requests
+console.log(Object.keys(books).length)
+
+// await getInfo(books)
 
 let endTime = performance.now()
 

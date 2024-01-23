@@ -55,13 +55,35 @@ export default async function(shelves) {
             pages = await tr.$eval("td.field.num_pages div.value nobr", (element) => element.textContent.trim().split("\n")[0])
           } catch (error) {}
 
+          let author = await tr.$eval("td.field.author a", (element) => element.textContent.trim())
+          // lastname, firstname -> firstname lastname
+          author = author.split(", ").reverse().join(" ")
+
+          // series
+          let series = null
+          let series_num = null
+          let title = await tr.$eval("td.field.title a", (element) => element.textContent.trim().split("\n"))
+          try {
+            if (title.length > 1) {
+              if (title[1].includes(",")) {
+                series = title[1].split("        (")[1].split(", #")[0]
+                series_num = title[1].split("        (")[1].split(", #")[1].split(")")[0]
+              } else if (title[1].includes("#")) {
+                series = title[1].split("        (")[1].split(" #")[0]
+                series_num = title[1].split("        (")[1].split(" #")[1].split(")")[0]
+              } else {
+                series = title[1].split("        (")[1].split(" Book ")[0]
+                series_num = title[1].split("        (")[1].split(" Book ")[1].split(")")[0]
+              }
+            }
+          } catch (error) {}
           try {
             books[book_id] = {
               "cover_url": await tr.$eval("td.field.cover img", (element) => element.getAttribute("src")),
-              "title": await tr.$eval("td.field.title a", (element) => element.textContent.trim().split("\n")[0]),
-              "series": null,
-              "series_num": null,
-              "authors": [],
+              "title": title[0],
+              "series": series,
+              "series_num": series_num,
+              "author": author,
               "pages": pages,
               "edition": await tr.$eval("td.field.format div.value", (element) => element.textContent.trim()),
               "publication_date": await tr.$eval("td.field.date_pub div.value", (element) => element.textContent.trim()),
@@ -70,17 +92,20 @@ export default async function(shelves) {
               "date_read": read,
               "shelves": [url],
               "genres": [],
-              "url": "https://www.goodreads.com" + await tr.$eval("td.field.title a", (element) => element.getAttribute("href"))
+              "url": "https://www.goodreads.com" + await tr.$eval("td.field.title a", (element) => element.getAttribute("href")),
+              "isbn": await tr.$eval("td.field.isbn div.value", (element) => element.textContent.trim())
             }
             count += 1
-          } catch (error) {}
+          } catch (error) {
+            console.log(error)
+          }
         } else {
           books[book_id].shelves.push(url)
           count += 1
         }
       }
-    } finally {
-      await page.close();
+    } catch (error) {
+      console.log(error)
     }
     console.log(url + ": " + count)
   }
@@ -102,8 +127,14 @@ export default async function(shelves) {
   await cluster.idle()
   await cluster.close()
 
-  fs.writeFile('./data/books.json', JSON.stringify(books), function (err) {
-    if (err) throw err
+  console.log(Object.keys(books).length)
+
+  // books.updatedAt = new Date()
+
+  try {
+    fs.writeFileSync('./data/books.json', JSON.stringify(books))
     console.log('Saved!')
-  })
+  } catch (error) {
+    console.log(error)
+  }
 }
